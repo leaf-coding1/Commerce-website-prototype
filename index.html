@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Five Kitchens – Food Delivery</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top">
+        <span class="brand-mark" aria-hidden="true">🥢</span>
+        Five Kitchens
+      </a>
+      <button class="cart-button" id="cart-button" type="button" aria-label="View your order">
+        <span aria-hidden="true">🛒</span>
+        <span class="cart-button-total" id="cart-button-total">£0.00</span>
+        <span class="badge" id="cart-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="wrap">
+      <h1>Food from five cultures, delivered to your door.</h1>
+      <p>
+        Freshly cooked dishes, microwave-ready meals and traditional teas and drinks
+        from Chinese, Indian, Nepalese, Vietnamese and Bangladeshi kitchens.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap layout">
+    <section class="menu" aria-label="Menu">
+      <nav class="cuisine-tabs" id="cuisine-tabs" aria-label="Choose a cuisine"></nav>
+
+      <div class="filters">
+        <div class="category-filter" id="category-filter" role="group" aria-label="Filter by type"></div>
+        <label class="search">
+          <span class="visually-hidden">Search the menu</span>
+          <input type="search" id="search" placeholder="Search dishes, drinks, ingredients…" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="legend" aria-label="Key">
+        <span class="tag tag-V">V</span> Vegetarian
+        <span class="tag tag-VG">VG</span> Vegan
+        <span class="tag tag-Spicy">Spicy</span>
+        <span class="tag tag-Nuts">Nuts</span>
+        <span class="tag tag-Fish">Fish</span> Contains fish/seafood
+      </div>
+
+      <div id="menu-list"></div>
+    </section>
+
+    <aside class="order" id="order" aria-label="Your order">
+      <div class="order-card">
+        <h2>Your order</h2>
+        <div id="cart-list"></div>
+        <dl class="totals" id="totals"></dl>
+      </div>
+
+      <form class="order-card" id="address-form" novalidate>
+        <h2>Delivery address</h2>
+
+        <div class="field">
+          <label for="fullName">Full name</label>
+          <input id="fullName" name="fullName" autocomplete="name">
+          <p class="error" data-error-for="fullName"></p>
+        </div>
+
+        <div class="field">
+          <label for="phone">Phone number</label>
+          <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="07700 900123">
+          <p class="error" data-error-for="phone"></p>
+        </div>
+
+        <div class="field">
+          <label for="line1">House number and street</label>
+          <input id="line1" name="line1" autocomplete="address-line1">
+          <p class="error" data-error-for="line1"></p>
+        </div>
+
+        <div class="field">
+          <label for="line2">Flat, building, etc. <span class="optional">(optional)</span></label>
+          <input id="line2" name="line2" autocomplete="address-line2">
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="city">Town or city</label>
+            <input id="city" name="city" autocomplete="address-level2">
+            <p class="error" data-error-for="city"></p>
+          </div>
+          <div class="field">
+            <label for="postcode">Postcode</label>
+            <input id="postcode" name="postcode" autocomplete="postal-code" placeholder="LS2 9JT">
+            <p class="error" data-error-for="postcode"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="deliveryTime">Delivery time</label>
+          <select id="deliveryTime" name="deliveryTime"></select>
+        </div>
+
+        <div class="field">
+          <label for="notes">Notes for the driver <span class="optional">(optional)</span></label>
+          <textarea id="notes" name="notes" rows="2" placeholder="e.g. ring the side door, leave with neighbour"></textarea>
+        </div>
+
+        <p class="error form-error" id="form-error"></p>
+        <button class="primary-button" type="submit" id="place-order">Place order</button>
+      </form>
+    </aside>
+  </main>
+
+  <button class="mobile-cart-bar" id="mobile-cart-bar" type="button" hidden>
+    <span id="mobile-cart-summary">View order</span>
+    <span aria-hidden="true">→</span>
+  </button>
+
+  <dialog class="confirmation" id="confirmation" aria-labelledby="confirmation-title"></dialog>
+
+  <footer class="site-footer">
+    <div class="wrap">Five Kitchens — a local demo site. No real orders or payments are taken.</div>
+  </footer>
+
+  <!-- Compiled from src/*.ts by `npm run build`. Order matters: data first. -->
+  <script src="dist/data.js"></script>
+  <script src="dist/app.js"></script>
+</body>
+</html>

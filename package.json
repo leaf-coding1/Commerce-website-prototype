@@ -1,0 +1,13 @@
+{
+  "name": "five-kitchens-delivery",
+  "version": "1.0.0",
+  "description": "Local food delivery website featuring Chinese, Indian, Nepalese, Vietnamese and Bangladeshi food.",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
