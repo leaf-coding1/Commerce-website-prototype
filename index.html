@@ -55,9 +55,16 @@
     </section>
 
     <aside class="order" id="order" aria-label="Your order">
+      <div class="order-card quick-order-card">
+        <h2>Not sure what to get?</h2>
+        <p>Answer a few quick questions and we'll put together a meal, tea and extras for you.</p>
+        <button class="primary-button" type="button" id="quick-order-button">⚡ Quick order</button>
+      </div>
+
       <div class="order-card">
         <h2>Your order</h2>
         <div id="cart-list"></div>
+        <div id="dietary-notes"></div>
         <dl class="totals" id="totals"></dl>
       </div>
 
@@ -122,6 +129,7 @@
   </button>
 
   <dialog class="confirmation" id="confirmation" aria-labelledby="confirmation-title"></dialog>
+  <dialog class="quick-order" id="quick-order" aria-labelledby="quick-order-title"></dialog>
 
   <footer class="site-footer">
     <div class="wrap">Five Kitchens — a local demo site. No real orders or payments are taken.</div>
@@ -130,5 +138,6 @@
   <!-- Compiled from src/*.ts by `npm run build`. Order matters: data first. -->
   <script src="dist/data.js"></script>
   <script src="dist/app.js"></script>
+  <script src="dist/quick-order.js"></script>
 </body>
 </html>

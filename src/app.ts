@@ -5,8 +5,17 @@ const DELIVERY_FEE = 10.99;
 const FREE_DELIVERY_FROM = 50;
 const CART_KEY = "fiveKitchens.cart";
 const ADDRESS_KEY = "fiveKitchens.address";
+const DIETARY_KEY = "fiveKitchens.dietary";
 
 type CuisineFilter = Cuisine | "all";
+/** Anything that can go in the basket: a menu item or an extra. */
+type Product = MenuItem | ExtraItem;
+
+interface DietaryInfo {
+  diets: Diet[];
+  allergies: Allergen[];
+  other: string;
+}
 type CategoryFilter = Category | "all";
 
 interface DeliveryDetails {
@@ -22,13 +31,14 @@ interface DeliveryDetails {
 
 type FormErrors = Partial<Record<keyof DeliveryDetails, string>>;
 
-const itemById = new Map<string, MenuItem>(MENU.map((item) => [item.id, item]));
+const itemById = new Map<string, Product>([...MENU, ...EXTRAS].map((item) => [item.id, item]));
 
 const state = {
   cuisine: "all" as CuisineFilter,
   category: "all" as CategoryFilter,
   search: "",
   cart: loadCart(),
+  dietary: loadDietary(),
 };
 
 // ───────────── Small helpers ─────────────
@@ -95,6 +105,58 @@ function setQuantity(id: string, qty: number): void {
   saveCart();
   renderMenu();
   renderCart();
+}
+
+/** Adds one of each id to the basket and records the customer's dietary needs (used by the quick order). */
+function addItemsToOrder(ids: string[], dietary: DietaryInfo): void {
+  for (const id of ids) {
+    if (itemById.has(id)) state.cart.set(id, Math.min((state.cart.get(id) ?? 0) + 1, 20));
+  }
+  state.dietary = dietary;
+  saveCart();
+  saveDietary();
+  renderMenu();
+  renderCart();
+}
+
+function accentClass(item: Product): string {
+  return "cuisine" in item ? `cuisine-${item.cuisine}` : "extra-item";
+}
+
+// ───────────── Dietary needs & allergies ─────────────
+
+function emptyDietary(): DietaryInfo {
+  return { diets: [], allergies: [], other: "" };
+}
+
+function loadDietary(): DietaryInfo {
+  const saved = storageGet(DIETARY_KEY);
+  if (!saved) return emptyDietary();
+  try {
+    const parsed = JSON.parse(saved) as Partial<DietaryInfo>;
+    return {
+      diets: (parsed.diets ?? []).filter((id) => DIET_OPTIONS.some((o) => o.id === id)),
+      allergies: (parsed.allergies ?? []).filter((id) => ALLERGY_OPTIONS.some((o) => o.id === id)),
+      other: typeof parsed.other === "string" ? parsed.other : "",
+    };
+  } catch {
+    return emptyDietary();
+  }
+}
+
+function saveDietary(): void {
+  storageSet(DIETARY_KEY, JSON.stringify(state.dietary));
+}
+
+/** One HTML line per kind of note, e.g. "Allergies: Peanuts, Gluten". Empty when there is nothing to say. */
+function dietaryLines(info: DietaryInfo): string[] {
+  const labels = <T extends string>(options: { id: T; label: string }[], ids: T[]) =>
+    options.filter((o) => ids.includes(o.id)).map((o) => o.label).join(", ");
+  const lines: string[] = [];
+  if (info.diets.length) lines.push(`<strong>Diet:</strong> ${labels(DIET_OPTIONS, info.diets)}`);
+  if (info.allergies.length) lines.push(`<strong>Allergies:</strong> ${labels(ALLERGY_OPTIONS, info.allergies)}`);
+  if (info.other) lines.push(`<strong>Other:</strong> ${escapeHtml(info.other)}`);
+  return lines;
 }
 
 function cartTotals() {
@@ -224,7 +286,7 @@ function renderCart(): void {
           .map(([id, qty]) => {
             const item = itemById.get(id)!;
             return `
-              <li class="cart-item cuisine-${item.cuisine}">
+              <li class="cart-item ${accentClass(item)}">
                 <span class="cart-item-name">${item.emoji} ${item.name}</span>
                 <div class="stepper small">
                   <button type="button" data-action="dec" data-id="${id}" aria-label="Remove one ${item.name}">−</button>
@@ -235,6 +297,17 @@ function renderCart(): void {
               </li>`;
           })
           .join("")}</ul>`;
+
+  const notes = dietaryLines(state.dietary);
+  byId("dietary-notes").innerHTML = notes.length
+    ? `<div class="notes-box">
+         <div class="notes-box-head">
+           <h3>Dietary &amp; allergy notes</h3>
+           <button type="button" class="link-button" id="clear-dietary">Remove</button>
+         </div>
+         <ul>${notes.map((line) => `<li>${line}</li>`).join("")}</ul>
+       </div>`
+    : "";
 
   const freeDeliveryHint =
     count > 0 && delivery > 0
@@ -361,7 +434,9 @@ function placeOrder(event: SubmitEvent): void {
   showConfirmation(details);
 
   state.cart.clear();
+  state.dietary = emptyDietary();
   saveCart();
+  saveDietary();
   renderMenu();
   renderCart();
   byId<HTMLTextAreaElement>("notes").value = "";
@@ -370,7 +445,11 @@ function placeOrder(event: SubmitEvent): void {
 function showConfirmation(details: DeliveryDetails): void {
   const { subtotal, delivery, total } = cartTotals();
   const orderNumber = `FK-${Math.floor(10000 + Math.random() * 90000)}`;
-  const hasMicrowaveMeals = [...state.cart.keys()].some((id) => itemById.get(id)?.category === "microwave");
+  const hasMicrowaveMeals = [...state.cart.keys()].some((id) => {
+    const item = itemById.get(id);
+    return item !== undefined && "category" in item && item.category === "microwave";
+  });
+  const notes = dietaryLines(state.dietary);
 
   const lines = [...state.cart]
     .map(([id, qty]) => {
@@ -407,6 +486,11 @@ function showConfirmation(details: DeliveryDetails): void {
         </dl>
       </div>
     </div>
+
+    ${notes.length
+      ? `<div class="notes-box"><h3>Dietary &amp; allergy notes sent to the kitchen</h3>
+           <ul>${notes.map((line) => `<li>${line}</li>`).join("")}</ul></div>`
+      : ""}
 
     ${hasMicrowaveMeals
       ? `<p class="section-note">Your microwave meals will arrive chilled: pop them in the fridge and heat as shown on each label.</p>`
@@ -460,6 +544,13 @@ function bindEvents(): void {
     const errorEl = document.querySelector<HTMLElement>(`[data-error-for="${name}"]`);
     if (errorEl) errorEl.textContent = "";
     (event.target as HTMLElement).removeAttribute("aria-invalid");
+  });
+
+  byId("dietary-notes").addEventListener("click", (event) => {
+    if (!(event.target as HTMLElement).closest("#clear-dietary")) return;
+    state.dietary = emptyDietary();
+    saveDietary();
+    renderCart();
   });
 
   byId<HTMLFormElement>("address-form").addEventListener("submit", placeOrder);

@@ -1,0 +1,505 @@
+"use strict";
+// Page behaviour: menu filtering, the basket, the address form and order confirmation.
+// Menu data (MENU, CUISINES, CATEGORIES) comes from data.ts, loaded first.
+const DELIVERY_FEE = 10.99;
+const FREE_DELIVERY_FROM = 50;
+const CART_KEY = "fiveKitchens.cart";
+const ADDRESS_KEY = "fiveKitchens.address";
+const DIETARY_KEY = "fiveKitchens.dietary";
+const itemById = new Map([...MENU, ...EXTRAS].map((item) => [item.id, item]));
+const state = {
+    cuisine: "all",
+    category: "all",
+    search: "",
+    cart: loadCart(),
+    dietary: loadDietary(),
+};
+// ───────────── Small helpers ─────────────
+function byId(id) {
+    const element = document.getElementById(id);
+    if (!element)
+        throw new Error(`Missing element #${id}`);
+    return element;
+}
+function formatPrice(amount) {
+    return `$${amount.toFixed(2)}`;
+}
+function escapeHtml(text) {
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+// localStorage can be unavailable (private browsing), so never let it break the page.
+function storageGet(key) {
+    try {
+        return localStorage.getItem(key);
+    }
+    catch {
+        return null;
+    }
+}
+function storageSet(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    }
+    catch {
+        /* ignore */
+    }
+}
+// ───────────── Cart ─────────────
+function loadCart() {
+    const cart = new Map();
+    const saved = storageGet(CART_KEY);
+    if (!saved)
+        return cart;
+    try {
+        const entries = JSON.parse(saved);
+        for (const [id, qty] of entries) {
+            if (itemById.has(id) && qty > 0)
+                cart.set(id, qty);
+        }
+    }
+    catch {
+        /* corrupt data: start with an empty basket */
+    }
+    return cart;
+}
+function saveCart() {
+    storageSet(CART_KEY, JSON.stringify([...state.cart.entries()]));
+}
+function setQuantity(id, qty) {
+    if (qty <= 0)
+        state.cart.delete(id);
+    else
+        state.cart.set(id, Math.min(qty, 20));
+    saveCart();
+    renderMenu();
+    renderCart();
+}
+/** Adds one of each id to the basket and records the customer's dietary needs (used by the quick order). */
+function addItemsToOrder(ids, dietary) {
+    for (const id of ids) {
+        if (itemById.has(id))
+            state.cart.set(id, Math.min((state.cart.get(id) ?? 0) + 1, 20));
+    }
+    state.dietary = dietary;
+    saveCart();
+    saveDietary();
+    renderMenu();
+    renderCart();
+}
+function accentClass(item) {
+    return "cuisine" in item ? `cuisine-${item.cuisine}` : "extra-item";
+}
+// ───────────── Dietary needs & allergies ─────────────
+function emptyDietary() {
+    return { diets: [], allergies: [], other: "" };
+}
+function loadDietary() {
+    const saved = storageGet(DIETARY_KEY);
+    if (!saved)
+        return emptyDietary();
+    try {
+        const parsed = JSON.parse(saved);
+        return {
+            diets: (parsed.diets ?? []).filter((id) => DIET_OPTIONS.some((o) => o.id === id)),
+            allergies: (parsed.allergies ?? []).filter((id) => ALLERGY_OPTIONS.some((o) => o.id === id)),
+            other: typeof parsed.other === "string" ? parsed.other : "",
+        };
+    }
+    catch {
+        return emptyDietary();
+    }
+}
+function saveDietary() {
+    storageSet(DIETARY_KEY, JSON.stringify(state.dietary));
+}
+/** One HTML line per kind of note, e.g. "Allergies: Peanuts, Gluten". Empty when there is nothing to say. */
+function dietaryLines(info) {
+    const labels = (options, ids) => options.filter((o) => ids.includes(o.id)).map((o) => o.label).join(", ");
+    const lines = [];
+    if (info.diets.length)
+        lines.push(`<strong>Diet:</strong> ${labels(DIET_OPTIONS, info.diets)}`);
+    if (info.allergies.length)
+        lines.push(`<strong>Allergies:</strong> ${labels(ALLERGY_OPTIONS, info.allergies)}`);
+    if (info.other)
+        lines.push(`<strong>Other:</strong> ${escapeHtml(info.other)}`);
+    return lines;
+}
+function cartTotals() {
+    let subtotal = 0;
+    let count = 0;
+    for (const [id, qty] of state.cart) {
+        subtotal += (itemById.get(id)?.price ?? 0) * qty;
+        count += qty;
+    }
+    const delivery = count === 0 || subtotal >= FREE_DELIVERY_FROM ? 0 : DELIVERY_FEE;
+    return { subtotal, delivery, total: subtotal + delivery, count };
+}
+// ───────────── Menu ─────────────
+function renderCuisineTabs() {
+    const tabs = [
+        { id: "all", label: "🌏 All" },
+        ...CUISINES.map((c) => ({ id: c.id, label: `${c.flag} ${c.name}` })),
+    ];
+    byId("cuisine-tabs").innerHTML = tabs
+        .map((tab) => `<button type="button" class="cuisine-tab" data-cuisine="${tab.id}"
+        aria-pressed="${state.cuisine === tab.id}">${tab.label}</button>`)
+        .join("");
+}
+function renderCategoryFilter() {
+    const options = [
+        { id: "all", label: "Everything" },
+        ...CATEGORIES.map((c) => ({ id: c.id, label: `${c.icon} ${c.label}` })),
+    ];
+    byId("category-filter").innerHTML = options
+        .map((opt) => `<button type="button" class="chip" data-category="${opt.id}"
+        aria-pressed="${state.category === opt.id}">${opt.label}</button>`)
+        .join("");
+}
+function matchesFilters(item) {
+    if (state.cuisine !== "all" && item.cuisine !== state.cuisine)
+        return false;
+    if (state.category !== "all" && item.category !== state.category)
+        return false;
+    if (!state.search)
+        return true;
+    const haystack = [item.name, item.nativeName ?? "", item.description, ...item.tags]
+        .join(" ")
+        .toLowerCase();
+    return haystack.includes(state.search);
+}
+function itemCard(item) {
+    const qty = state.cart.get(item.id) ?? 0;
+    const tags = item.tags.map((t) => `<span class="tag tag-${t}">${t}</span>`).join("");
+    const microwave = item.microwaveMinutes
+        ? `<span class="tag tag-microwave">⏱️ ${item.microwaveMinutes} min</span>`
+        : "";
+    const control = qty === 0
+        ? `<button type="button" class="add-button" data-action="add" data-id="${item.id}">Add</button>`
+        : `<div class="stepper" aria-label="Quantity of ${item.name}">
+           <button type="button" data-action="dec" data-id="${item.id}" aria-label="Remove one">−</button>
+           <span>${qty}</span>
+           <button type="button" data-action="inc" data-id="${item.id}" aria-label="Add one">+</button>
+         </div>`;
+    return `
+    <article class="item-card cuisine-${item.cuisine}">
+      <div class="item-emoji" aria-hidden="true">${item.emoji}</div>
+      <div class="item-body">
+        <h4>${item.name}</h4>
+        ${item.nativeName ? `<p class="native-name">${item.nativeName}</p>` : ""}
+        <p class="item-description">${item.description}</p>
+        <div class="tags">${microwave}${tags}</div>
+      </div>
+      <div class="item-footer">
+        <span class="price">${formatPrice(item.price)}</span>
+        ${control}
+      </div>
+    </article>`;
+}
+function renderMenu() {
+    const cuisines = CUISINES.filter((c) => state.cuisine === "all" || c.id === state.cuisine);
+    let html = "";
+    for (const cuisine of cuisines) {
+        let sections = "";
+        for (const category of CATEGORIES) {
+            const items = MENU.filter((i) => i.cuisine === cuisine.id && i.category === category.id && matchesFilters(i));
+            if (items.length === 0)
+                continue;
+            const note = category.id === "microwave"
+                ? `<p class="section-note">Delivered chilled. Keep in the fridge and eat within 3 days.</p>`
+                : "";
+            sections += `
+        <div class="category-section">
+          <h3>${category.icon} ${category.label}</h3>
+          ${note}
+          <div class="item-grid">${items.map(itemCard).join("")}</div>
+        </div>`;
+        }
+        if (!sections)
+            continue;
+        html += `
+      <section class="cuisine-section cuisine-${cuisine.id}">
+        <header class="cuisine-header">
+          <h2><span aria-hidden="true">${cuisine.flag}</span> ${cuisine.name}</h2>
+          <p>${cuisine.blurb}</p>
+        </header>
+        ${sections}
+      </section>`;
+    }
+    byId("menu-list").innerHTML =
+        html || `<p class="empty-state">Nothing matches “${escapeHtml(state.search)}”. Try another search or filter.</p>`;
+}
+// -------------- Basket panel --------------
+function renderCart() {
+    const { subtotal, delivery, total, count } = cartTotals();
+    byId("cart-list").innerHTML =
+        count === 0
+            ? `<p class="empty-cart">Your basket is empty. Add something from the menu to get started.</p>`
+            : `<ul class="cart-items">${[...state.cart]
+                .map(([id, qty]) => {
+                const item = itemById.get(id);
+                return `
+              <li class="cart-item ${accentClass(item)}">
+                <span class="cart-item-name">${item.emoji} ${item.name}</span>
+                <div class="stepper small">
+                  <button type="button" data-action="dec" data-id="${id}" aria-label="Remove one ${item.name}">−</button>
+                  <span>${qty}</span>
+                  <button type="button" data-action="inc" data-id="${id}" aria-label="Add one ${item.name}">+</button>
+                </div>
+                <span class="cart-item-price">${formatPrice(item.price * qty)}</span>
+              </li>`;
+            })
+                .join("")}</ul>`;
+    const notes = dietaryLines(state.dietary);
+    byId("dietary-notes").innerHTML = notes.length
+        ? `<div class="notes-box">
+         <div class="notes-box-head">
+           <h3>Dietary &amp; allergy notes</h3>
+           <button type="button" class="link-button" id="clear-dietary">Remove</button>
+         </div>
+         <ul>${notes.map((line) => `<li>${line}</li>`).join("")}</ul>
+       </div>`
+        : "";
+    const freeDeliveryHint = count > 0 && delivery > 0
+        ? `<p class="hint">Add ${formatPrice(FREE_DELIVERY_FROM - subtotal)} more for free delivery.</p>`
+        : "";
+    byId("totals").innerHTML = `
+    <div><dt>Subtotal</dt><dd>${formatPrice(subtotal)}</dd></div>
+    <div><dt>Delivery</dt><dd>${count === 0 ? "—" : delivery === 0 ? "Free" : formatPrice(delivery)}</dd></div>
+    <div class="grand-total"><dt>Total</dt><dd>${formatPrice(total)}</dd></div>
+    ${freeDeliveryHint}`;
+    byId("cart-count").textContent = String(count);
+    byId("cart-button-total").textContent = formatPrice(total);
+    const mobileBar = byId("mobile-cart-bar");
+    mobileBar.hidden = count === 0;
+    byId("mobile-cart-summary").textContent = `View order · ${count} item${count === 1 ? "" : "s"} · ${formatPrice(total)}`;
+    byId("place-order").disabled = count === 0;
+}
+// ───────────── Address form ─────────────
+const FIELD_NAMES = [
+    "fullName", "phone", "line1", "line2", "city", "postcode", "deliveryTime", "notes",
+];
+function populateDeliveryTimes() {
+    const select = byId("deliveryTime");
+    const options = [`<option value="ASAP">As soon as possible (about 40 min)</option>`];
+    // Offer 30-minute slots starting about an hour from now, up to 10pm.
+    const slot = new Date();
+    slot.setMinutes(slot.getMinutes() + 60);
+    slot.setMinutes(Math.ceil(slot.getMinutes() / 30) * 30, 0, 0);
+    const lastSlot = new Date();
+    lastSlot.setHours(22, 0, 0, 0);
+    while (slot <= lastSlot) {
+        const label = slot.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+        options.push(`<option value="${label}">Today at ${label}</option>`);
+        slot.setMinutes(slot.getMinutes() + 30);
+    }
+    select.innerHTML = options.join("");
+}
+function formControl(name) {
+    return byId(name);
+}
+function readForm() {
+    const details = {};
+    for (const name of FIELD_NAMES)
+        details[name] = formControl(name).value.trim();
+    details.postcode = details.postcode.toUpperCase();
+    return details;
+}
+function restoreSavedAddress() {
+    const saved = storageGet(ADDRESS_KEY);
+    if (!saved)
+        return;
+    try {
+        const details = JSON.parse(saved);
+        for (const name of FIELD_NAMES) {
+            if (name === "deliveryTime" || name === "notes")
+                continue;
+            const value = details[name];
+            if (typeof value === "string")
+                formControl(name).value = value;
+        }
+    }
+    catch {
+        /* ignore */
+    }
+}
+function validate(details) {
+    const errors = {};
+    if (details.fullName.length < 2)
+        errors.fullName = "Please enter your name.";
+    if (details.phone.replace(/\D/g, "").length < 10)
+        errors.phone = "Please enter a phone number the driver can call.";
+    if (!details.line1)
+        errors.line1 = "Please enter your house number and street.";
+    if (!details.city)
+        errors.city = "Please enter your town or city.";
+    // AUS postcode
+    if (!/^[0-9]{4}$/.test(details.postcode)) {
+        errors.postcode = "Please enter a valid Australian postcode, e.g. 2000 or 2432.";
+    }
+    return errors;
+}
+function showErrors(errors) {
+    for (const name of FIELD_NAMES) {
+        const message = errors[name] ?? "";
+        const errorEl = document.querySelector(`[data-error-for="${name}"]`);
+        if (errorEl)
+            errorEl.textContent = message;
+        formControl(name).setAttribute("aria-invalid", String(Boolean(message)));
+    }
+}
+// ───────────── Placing an order ─────────────
+function estimatedArrival(deliveryTime) {
+    if (deliveryTime !== "ASAP")
+        return `Today at ${deliveryTime}`;
+    const eta = new Date(Date.now() + 40 * 60 * 1000);
+    return `Around ${eta.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}
+function placeOrder(event) {
+    event.preventDefault();
+    const formError = byId("form-error");
+    formError.textContent = "";
+    if (state.cart.size === 0) {
+        formError.textContent = "Your basket is empty.";
+        return;
+    }
+    const details = readForm();
+    const errors = validate(details);
+    showErrors(errors);
+    const firstInvalid = FIELD_NAMES.find((name) => errors[name]);
+    if (firstInvalid) {
+        formControl(firstInvalid).focus();
+        return;
+    }
+    storageSet(ADDRESS_KEY, JSON.stringify(details));
+    showConfirmation(details);
+    state.cart.clear();
+    state.dietary = emptyDietary();
+    saveCart();
+    saveDietary();
+    renderMenu();
+    renderCart();
+    byId("notes").value = "";
+}
+function showConfirmation(details) {
+    const { subtotal, delivery, total } = cartTotals();
+    const orderNumber = `FK-${Math.floor(10000 + Math.random() * 90000)}`;
+    const hasMicrowaveMeals = [...state.cart.keys()].some((id) => {
+        const item = itemById.get(id);
+        return item !== undefined && "category" in item && item.category === "microwave";
+    });
+    const notes = dietaryLines(state.dietary);
+    const lines = [...state.cart]
+        .map(([id, qty]) => {
+        const item = itemById.get(id);
+        return `<li><span>${qty} × ${item.name}</span><span>${formatPrice(item.price * qty)}</span></li>`;
+    })
+        .join("");
+    const address = [details.line1, details.line2, details.city, details.postcode]
+        .filter(Boolean)
+        .map(escapeHtml)
+        .join("<br>");
+    const dialog = byId("confirmation");
+    dialog.innerHTML = `
+    <div class="confirmation-icon" aria-hidden="true">✅</div>
+    <h2 id="confirmation-title">Order placed!</h2>
+    <p class="order-number">Order number <strong>${orderNumber}</strong></p>
+    <p class="eta">${estimatedArrival(details.deliveryTime)}</p>
+
+    <div class="confirmation-grid">
+      <div>
+        <h3>Delivering to</h3>
+        <p><strong>${escapeHtml(details.fullName)}</strong><br>${address}<br>${escapeHtml(details.phone)}</p>
+        ${details.notes ? `<p class="driver-notes">“${escapeHtml(details.notes)}”</p>` : ""}
+      </div>
+      <div>
+        <h3>Your items</h3>
+        <ul class="confirmation-items">${lines}</ul>
+        <dl class="totals compact">
+          <div><dt>Subtotal</dt><dd>${formatPrice(subtotal)}</dd></div>
+          <div><dt>Delivery</dt><dd>${delivery === 0 ? "Free" : formatPrice(delivery)}</dd></div>
+          <div class="grand-total"><dt>Total</dt><dd>${formatPrice(total)}</dd></div>
+        </dl>
+      </div>
+    </div>
+
+    ${notes.length
+        ? `<div class="notes-box"><h3>Dietary &amp; allergy notes sent to the kitchen</h3>
+           <ul>${notes.map((line) => `<li>${line}</li>`).join("")}</ul></div>`
+        : ""}
+
+    ${hasMicrowaveMeals
+        ? `<p class="section-note">Your microwave meals will arrive chilled: pop them in the fridge and heat as shown on each label.</p>`
+        : ""}
+
+    <form method="dialog"><button class="primary-button" type="submit">Done</button></form>`;
+    dialog.showModal();
+}
+// ───────────── Events ─────────────
+function scrollToOrder() {
+    byId("order").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function bindEvents() {
+    // One click handler for every add / + / − button, wherever it is on the page.
+    document.addEventListener("click", (event) => {
+        const target = event.target.closest("[data-action]");
+        if (!target?.dataset.id)
+            return;
+        const id = target.dataset.id;
+        const qty = state.cart.get(id) ?? 0;
+        if (target.dataset.action === "add" || target.dataset.action === "inc")
+            setQuantity(id, qty + 1);
+        if (target.dataset.action === "dec")
+            setQuantity(id, qty - 1);
+    });
+    byId("cuisine-tabs").addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-cuisine]");
+        if (!tab)
+            return;
+        state.cuisine = tab.dataset.cuisine;
+        renderCuisineTabs();
+        renderMenu();
+    });
+    byId("category-filter").addEventListener("click", (event) => {
+        const chip = event.target.closest("[data-category]");
+        if (!chip)
+            return;
+        state.category = chip.dataset.category;
+        renderCategoryFilter();
+        renderMenu();
+    });
+    byId("search").addEventListener("input", (event) => {
+        state.search = event.target.value.trim().toLowerCase();
+        renderMenu();
+    });
+    // Clear a field's error as soon as the user starts fixing it.
+    byId("address-form").addEventListener("input", (event) => {
+        const name = event.target.id;
+        const errorEl = document.querySelector(`[data-error-for="${name}"]`);
+        if (errorEl)
+            errorEl.textContent = "";
+        event.target.removeAttribute("aria-invalid");
+    });
+    byId("dietary-notes").addEventListener("click", (event) => {
+        if (!event.target.closest("#clear-dietary"))
+            return;
+        state.dietary = emptyDietary();
+        saveDietary();
+        renderCart();
+    });
+    byId("address-form").addEventListener("submit", placeOrder);
+    byId("cart-button").addEventListener("click", scrollToOrder);
+    byId("mobile-cart-bar").addEventListener("click", scrollToOrder);
+}
+// ───────────── Start ─────────────
+renderCuisineTabs();
+renderCategoryFilter();
+renderMenu();
+renderCart();
+populateDeliveryTimes();
+restoreSavedAddress();
+bindEvents();
+//# sourceMappingURL=app.js.map

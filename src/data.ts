@@ -17,6 +17,8 @@ interface MenuItem {
   tags: Tag[];
   /** Only for microwave meals: minutes to heat from chilled. */
   microwaveMinutes?: number;
+  /** Drinks that are teas, offered as the tea choice in the quick order. */
+  isTea?: boolean;
 }
 
 interface CuisineInfo {
@@ -122,19 +124,19 @@ const MENU: MenuItem[] = [
     price: 3.95, tags: ["VG"], microwaveMinutes: 3,
   },
   {
-    id: "cn-jasmine", cuisine: "chinese", category: "drink", emoji: "🍵",
+    id: "cn-jasmine", cuisine: "chinese", category: "drink", emoji: "🍵", isTea: true,
     name: "Jasmine Green Tea", nativeName: "茉莉花茶",
     description: "Green tea scented with jasmine blossoms. Pot for one.",
     price: 2.50, tags: ["VG", "Caffeine"],
   },
   {
-    id: "cn-oolong", cuisine: "chinese", category: "drink", emoji: "🫖",
+    id: "cn-oolong", cuisine: "chinese", category: "drink", emoji: "🫖", isTea: true,
     name: "Tieguanyin Oolong", nativeName: "铁观音",
     description: "Floral, lightly roasted oolong from Fujian.",
     price: 2.95, tags: ["VG", "Caffeine"],
   },
   {
-    id: "cn-puerh", cuisine: "chinese", category: "drink", emoji: "🍂",
+    id: "cn-puerh", cuisine: "chinese", category: "drink", emoji: "🍂", isTea: true,
     name: "Pu-erh Tea", nativeName: "普洱茶",
     description: "Earthy aged tea from Yunnan, traditionally served after a heavy meal.",
     price: 2.95, tags: ["VG", "Caffeine"],
@@ -202,7 +204,7 @@ const MENU: MenuItem[] = [
     price: 4.50, tags: ["VG"], microwaveMinutes: 4,
   },
   {
-    id: "in-masala-chai", cuisine: "indian", category: "drink", emoji: "☕",
+    id: "in-masala-chai", cuisine: "indian", category: "drink", emoji: "☕", isTea: true,
     name: "Masala Chai", nativeName: "मसाला चाय",
     description: "Assam tea boiled with milk, cardamom, ginger and cinnamon.",
     price: 2.50, tags: ["V", "Caffeine"],
@@ -288,19 +290,19 @@ const MENU: MenuItem[] = [
     price: 4.25, tags: ["VG"], microwaveMinutes: 4,
   },
   {
-    id: "np-chiya", cuisine: "nepalese", category: "drink", emoji: "☕",
+    id: "np-chiya", cuisine: "nepalese", category: "drink", emoji: "☕", isTea: true,
     name: "Nepali Milk Tea", nativeName: "दूध चिया",
     description: "Black tea simmered with milk, sugar and cardamom.",
     price: 2.25, tags: ["V", "Caffeine"],
   },
   {
-    id: "np-ilam", cuisine: "nepalese", category: "drink", emoji: "🍵",
+    id: "np-ilam", cuisine: "nepalese", category: "drink", emoji: "🍵", isTea: true,
     name: "Ilam Black Tea", nativeName: "इलाम चिया",
     description: "High-altitude tea from Ilam in eastern Nepal, served plain.",
     price: 2.50, tags: ["VG", "Caffeine"],
   },
   {
-    id: "np-butter-tea", cuisine: "nepalese", category: "drink", emoji: "🧈",
+    id: "np-butter-tea", cuisine: "nepalese", category: "drink", emoji: "🧈", isTea: true,
     name: "Himalayan Butter Tea",
     description: "Salty Sherpa-style tea churned with butter, for cold days.",
     price: 2.95, tags: ["V", "Caffeine"],
@@ -368,13 +370,13 @@ const MENU: MenuItem[] = [
     price: 3.50, tags: ["V", "Caffeine"],
   },
   {
-    id: "vn-tra-sen", cuisine: "vietnamese", category: "drink", emoji: "🪷",
+    id: "vn-tra-sen", cuisine: "vietnamese", category: "drink", emoji: "🪷", isTea: true,
     name: "Lotus Tea", nativeName: "Trà sen",
     description: "Green tea scented with lotus flowers, a Hanoi speciality.",
     price: 2.95, tags: ["VG", "Caffeine"],
   },
   {
-    id: "vn-atiso", cuisine: "vietnamese", category: "drink", emoji: "🌿",
+    id: "vn-atiso", cuisine: "vietnamese", category: "drink", emoji: "🌿", isTea: true,
     name: "Artichoke Tea", nativeName: "Trà atiso",
     description: "Caffeine-free herbal tea from Đà Lạt, served hot or iced.",
     price: 2.50, tags: ["VG"],
@@ -442,19 +444,19 @@ const MENU: MenuItem[] = [
     price: 3.95, tags: ["VG"], microwaveMinutes: 4,
   },
   {
-    id: "bd-doodh-cha", cuisine: "bangladeshi", category: "drink", emoji: "☕",
+    id: "bd-doodh-cha", cuisine: "bangladeshi", category: "drink", emoji: "☕", isTea: true,
     name: "Doodh Cha", nativeName: "দুধ চা",
     description: "Sweet, strong milk tea, as served at every tea stall.",
     price: 2.25, tags: ["V", "Caffeine"],
   },
   {
-    id: "bd-seven-layer", cuisine: "bangladeshi", category: "drink", emoji: "🌈",
+    id: "bd-seven-layer", cuisine: "bangladeshi", category: "drink", emoji: "🌈", isTea: true,
     name: "Seven-Layer Tea", nativeName: "সাত রঙের চা",
     description: "Sylhet's famous layered tea, each layer a different flavour.",
     price: 3.95, tags: ["V", "Caffeine"],
   },
   {
-    id: "bd-lebu-cha", cuisine: "bangladeshi", category: "drink", emoji: "🍋",
+    id: "bd-lebu-cha", cuisine: "bangladeshi", category: "drink", emoji: "🍋", isTea: true,
     name: "Lemon Tea", nativeName: "লেবু চা",
     description: "Black Sylheti tea with fresh lemon and a little sugar.",
     price: 2.25, tags: ["VG", "Caffeine"],
@@ -466,3 +468,116 @@ const MENU: MenuItem[] = [
     price: 2.95, tags: ["V"],
   },
 ];
+
+// ───────────── Extras (not tied to a cuisine) ─────────────
+
+interface ExtraItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  emoji: string;
+}
+
+const EXTRAS: ExtraItem[] = [
+  { id: "ex-electrolyte", name: "Electrolyte sachet", emoji: "💧", price: 1.50,
+    description: "Rehydration powder to mix into a glass of water." },
+  { id: "ex-fruit", name: "Fresh fruit", emoji: "🍊", price: 1.95,
+    description: "A piece of ripe seasonal fruit." },
+  { id: "ex-heat-pack", name: "Heat pack", emoji: "♨️", price: 2.50,
+    description: "Single-use warmer that stays warm for about 8 hours." },
+  { id: "ex-tissues", name: "Tissue box", emoji: "🤧", price: 2.95,
+    description: "A box of soft facial tissues." },
+];
+
+// ───────────── Dietary needs & allergies ─────────────
+
+type Diet = "vegan" | "vegetarian" | "halal" | "noPork" | "noBeef";
+type Allergen =
+  | "peanut" | "treeNut" | "shellfish" | "dairy" | "gluten"
+  | "fish" | "egg" | "soy" | "sesame" | "mustard";
+
+const DIET_OPTIONS: { id: Diet; label: string; hint?: string }[] = [
+  { id: "vegan", label: "Vegan" },
+  { id: "vegetarian", label: "Vegetarian" },
+  { id: "halal", label: "Halal", hint: "No pork; we'll tell the kitchen" },
+  { id: "noPork", label: "No pork" },
+  { id: "noBeef", label: "No beef" }
+];
+
+const ALLERGY_OPTIONS: { id: Allergen; label: string }[] = [
+  { id: "peanut", label: "Peanuts" },
+  { id: "treeNut", label: "Tree nuts" },
+  { id: "shellfish", label: "Shellfish" },
+  { id: "dairy", label: "Lactose / dairy" },
+  { id: "gluten", label: "Gluten" },
+  { id: "fish", label: "Fish" },
+  { id: "egg", label: "Egg" },
+  { id: "soy", label: "Soy" },
+  { id: "sesame", label: "Sesame" },
+  { id: "mustard", label: "Mustard" },
+];
+
+/**
+ * What each menu item contains, used by the quick order to skip unsuitable meals.
+ * Items not listed contain none of these. Best-effort guide: keep it in step with the kitchen.
+ */
+const CONTAINS: Record<string, (Allergen | "pork" | "beef")[]> = {
+  // Chinese
+  "cn-kung-pao": ["peanut", "soy", "gluten"],
+  "cn-mapo-tofu": ["soy", "gluten"],
+  "cn-char-siu": ["pork", "soy", "gluten", "sesame"],
+  "cn-xiaolongbao": ["pork", "gluten", "soy"],
+  "cn-chow-mein": ["beef", "gluten", "egg", "soy"],
+  "cn-spring-rolls": ["gluten", "soy"],
+  "cn-mw-sweet-sour": ["gluten", "egg", "soy"],
+  "cn-mw-chow-mein": ["gluten", "egg", "soy"],
+  "cn-mw-dumplings": ["gluten", "soy", "sesame"],
+  "cn-soy-milk": ["soy"],
+  // Indian
+  "in-butter-chicken": ["dairy", "treeNut"],
+  "in-rogan-josh": ["dairy"],
+  "in-palak-paneer": ["dairy"],
+  "in-masala-dosa": ["mustard"],
+  "in-samosa": ["gluten"],
+  "in-mw-tikka": ["dairy"],
+  "in-mw-dal-makhani": ["dairy"],
+  "in-masala-chai": ["dairy"],
+  "in-mango-lassi": ["dairy"],
+  "in-salt-lassi": ["dairy"],
+  // Nepalese
+  "np-chicken-momo": ["gluten", "sesame"],
+  "np-veg-momo": ["gluten", "soy", "sesame"],
+  "np-dal-bhat": ["mustard"],
+  "np-thukpa": ["gluten", "soy"],
+  "np-choila": ["mustard"],
+  "np-aloo-tama": ["mustard"],
+  "np-mw-dal-bhat": ["mustard"],
+  "np-mw-momo": ["gluten", "sesame"],
+  "np-mw-aloo-tama": ["mustard"],
+  "np-chiya": ["dairy"],
+  "np-butter-tea": ["dairy"],
+  // Vietnamese
+  "vn-pho-bo": ["beef", "fish"],
+  "vn-banh-mi": ["pork", "gluten", "egg", "soy"],
+  "vn-goi-cuon": ["shellfish", "peanut", "soy", "gluten"],
+  "vn-bun-cha": ["pork", "fish"],
+  "vn-com-tam": ["soy", "gluten"],
+  "vn-bun-bo-hue": ["beef", "pork", "shellfish", "fish"],
+  "vn-mw-pho-ga": ["fish"],
+  "vn-mw-ga-xao-sa": ["fish"],
+  "vn-mw-thit-kho": ["pork", "egg", "fish"],
+  "vn-ca-phe": ["dairy"],
+  // Bangladeshi
+  "bd-kacchi": ["dairy"],
+  "bd-shorshe-ilish": ["fish", "mustard"],
+  "bd-kala-bhuna": ["beef"],
+  "bd-khichuri": ["dairy"],
+  "bd-begun-bhaja": ["mustard"],
+  "bd-fuchka": ["gluten"],
+  "bd-mw-khichuri": ["egg", "dairy"],
+  "bd-mw-bhorta": ["mustard"],
+  "bd-doodh-cha": ["dairy"],
+  "bd-seven-layer": ["dairy"],
+  "bd-borhani": ["dairy"],
+};
