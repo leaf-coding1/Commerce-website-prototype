@@ -31,7 +31,7 @@ interface DeliveryDetails {
 
 type FormErrors = Partial<Record<keyof DeliveryDetails, string>>;
 
-const itemById = new Map<string, Product>([...MENU, ...EXTRAS].map((item) => [item.id, item]));
+const itemById = new Map<string, Product>([...MENU, ...EXTRAS, ...GIFT_EXTRAS].map((item) => [item.id, item]));
 
 const state = {
   cuisine: "all" as CuisineFilter,
@@ -39,6 +39,7 @@ const state = {
   search: "",
   cart: loadCart(),
   dietary: loadDietary(),
+  language: "en",
 };
 
 // ───────────── Small helpers ─────────────
@@ -107,14 +108,15 @@ function setQuantity(id: string, qty: number): void {
   renderCart();
 }
 
-/** Adds one of each id to the basket and records the customer's dietary needs (used by the quick order). */
-function addItemsToOrder(ids: string[], dietary: DietaryInfo): void {
+/** Adds one of each id to the basket and records the customer's dietary needs (used by the quick order).
+ *  `saveToAccount` is false when the order is for someone else, so their needs don't replace the account's. */
+function addItemsToOrder(ids: string[], dietary: DietaryInfo, saveToAccount = true): void {
   for (const id of ids) {
     if (itemById.has(id)) state.cart.set(id, Math.min((state.cart.get(id) ?? 0) + 1, 20));
   }
   state.dietary = dietary;
   saveCart();
-  saveDietary();
+  saveDietary(saveToAccount);
   renderMenu();
   renderCart();
 }
@@ -144,8 +146,9 @@ function loadDietary(): DietaryInfo {
   }
 }
 
-function saveDietary(): void {
+function saveDietary(saveToAccount = true): void {
   storageSet(DIETARY_KEY, JSON.stringify(state.dietary));
+  if (saveToAccount) saveAccountDietary(state.dietary); // keep a logged-in account up to date (account.ts)
 }
 
 /** One HTML line per kind of note, e.g. "Allergies: Peanuts, Gluten". Empty when there is nothing to say. */
@@ -173,27 +176,16 @@ function cartTotals() {
 // ───────────── Menu ─────────────
 
 function renderCuisineTabs(): void {
+  const container = document.getElementById("cuisine-tabs");
+  if (!container) return; // the full menu isn't on the page at the moment
   const tabs: { id: CuisineFilter; label: string }[] = [
     { id: "all", label: "🌏 All" },
     ...CUISINES.map((c) => ({ id: c.id, label: `${c.flag} ${c.name}` })),
   ];
-  byId("cuisine-tabs").innerHTML = tabs
+  container.innerHTML = tabs
     .map(
       (tab) => `<button type="button" class="cuisine-tab" data-cuisine="${tab.id}"
         aria-pressed="${state.cuisine === tab.id}">${tab.label}</button>`,
-    )
-    .join("");
-}
-
-function renderCategoryFilter(): void {
-  const options: { id: CategoryFilter; label: string }[] = [
-    { id: "all", label: "Everything" },
-    ...CATEGORIES.map((c) => ({ id: c.id, label: `${c.icon} ${c.label}` })),
-  ];
-  byId("category-filter").innerHTML = options
-    .map(
-      (opt) => `<button type="button" class="chip" data-category="${opt.id}"
-        aria-pressed="${state.category === opt.id}">${opt.label}</button>`,
     )
     .join("");
 }
@@ -211,7 +203,7 @@ function matchesFilters(item: MenuItem): boolean {
 function itemCard(item: MenuItem): string {
   const qty = state.cart.get(item.id) ?? 0;
   const tags = item.tags.map((t) => `<span class="tag tag-${t}">${t}</span>`).join("");
-  const microwave = item.microwaveMinutes
+  const microwaveTime = item.microwaveMinutes
     ? `<span class="tag tag-microwave">⏱️ ${item.microwaveMinutes} min</span>`
     : "";
   const control =
@@ -230,7 +222,7 @@ function itemCard(item: MenuItem): string {
         <h4>${item.name}</h4>
         ${item.nativeName ? `<p class="native-name">${item.nativeName}</p>` : ""}
         <p class="item-description">${item.description}</p>
-        <div class="tags">${microwave}${tags}</div>
+        <div class="tags">${microwaveTime}${tags}</div>
       </div>
       <div class="item-footer">
         <span class="price">${formatPrice(item.price)}</span>
@@ -240,6 +232,8 @@ function itemCard(item: MenuItem): string {
 }
 
 function renderMenu(): void {
+  const menuList = document.getElementById("menu-list");
+  if (!menuList) return; // the full menu isn't on the page at the moment
   const cuisines = CUISINES.filter((c) => state.cuisine === "all" || c.id === state.cuisine);
   let html = "";
 
@@ -249,7 +243,7 @@ function renderMenu(): void {
       const items = MENU.filter((i) => i.cuisine === cuisine.id && i.category === category.id && matchesFilters(i));
       if (items.length === 0) continue;
       const note =
-        category.id === "microwave"
+        category.id === "quick meal"
           ? `<p class="section-note">Delivered chilled. Keep in the fridge and eat within 3 days.</p>`
           : "";
       sections += `
@@ -270,7 +264,7 @@ function renderMenu(): void {
       </section>`;
   }
 
-  byId("menu-list").innerHTML =
+  menuList.innerHTML =
     html || `<p class="empty-state">Nothing matches “${escapeHtml(state.search)}”. Try another search or filter.</p>`;
 }
 
@@ -319,9 +313,6 @@ function renderCart(): void {
     <div><dt>Delivery</dt><dd>${count === 0 ? "—" : delivery === 0 ? "Free" : formatPrice(delivery)}</dd></div>
     <div class="grand-total"><dt>Total</dt><dd>${formatPrice(total)}</dd></div>
     ${freeDeliveryHint}`;
-
-  byId("cart-count").textContent = String(count);
-  byId("cart-button-total").textContent = formatPrice(total);
 
   const mobileBar = byId<HTMLButtonElement>("mobile-cart-bar");
   mobileBar.hidden = count === 0;
@@ -447,7 +438,7 @@ function showConfirmation(details: DeliveryDetails): void {
   const orderNumber = `FK-${Math.floor(10000 + Math.random() * 90000)}`;
   const hasMicrowaveMeals = [...state.cart.keys()].some((id) => {
     const item = itemById.get(id);
-    return item !== undefined && "category" in item && item.category === "microwave";
+    return item !== undefined && "category" in item && item.category === "quick meal";
   });
   const notes = dietaryLines(state.dietary);
 
@@ -500,10 +491,71 @@ function showConfirmation(details: DeliveryDetails): void {
   dialog.showModal();
 }
 
+// ───────────── Language switcher (stub) ─────────────
+// Only remembers which language was picked; nothing is translated yet.
+
+function renderLanguageMenu(): void {
+  const current = LANGUAGES.find((l) => l.code === state.language) ?? LANGUAGES[0];
+  byId("language-button-label").textContent = current.nativeName;
+  byId("language-button").setAttribute("aria-label", `Change language (current: ${current.name})`);
+  byId("language-menu").innerHTML = LANGUAGES.map(
+    (lang) => `<li><button type="button" class="language-option" data-language="${lang.code}" lang="${lang.code}"
+        aria-pressed="${lang.code === state.language}">
+        <span>${lang.nativeName}</span>
+        ${lang.code === "en" ? "" : `<small lang="en">${lang.name}</small>`}
+      </button></li>`,
+  ).join("");
+}
+
+function setLanguageMenuOpen(open: boolean): void {
+  byId("language-menu").hidden = !open;
+  byId("language-button").setAttribute("aria-expanded", String(open));
+}
+
+function bindLanguageMenu(): void {
+  const button = byId("language-button");
+  const menu = byId("language-menu");
+
+  button.addEventListener("click", () =>
+    setLanguageMenuOpen(button.getAttribute("aria-expanded") !== "true"));
+
+  menu.addEventListener("click", (event) => {
+    const option = (event.target as HTMLElement).closest<HTMLElement>("[data-language]");
+    if (!option) return;
+    state.language = option.dataset.language!;
+    renderLanguageMenu();
+    setLanguageMenuOpen(false);
+    button.focus();
+  });
+
+  // Close when clicking anywhere else or pressing Escape.
+  document.addEventListener("click", (event) => {
+    if (!(event.target as HTMLElement).closest(".language-picker")) setLanguageMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !menu.hidden) {
+      setLanguageMenuOpen(false);
+      button.focus();
+    }
+  });
+}
+
 // ───────────── Events ─────────────
 
-function scrollToOrder(): void {
-  byId("order").scrollIntoView({ behavior: "smooth", block: "start" });
+/** Shows the order (basket + delivery address) covering the whole screen. Used at the end of the quick order. */
+function openOrderScreen(): void {
+  const order = byId("order");
+  order.classList.add("is-fullscreen");
+  order.scrollTop = 0;
+  document.body.classList.add("order-screen-open");
+  byId("order-screen-title").focus();
+}
+
+function closeOrderScreen(): void {
+  const order = byId("order");
+  if (!order.classList.contains("is-fullscreen")) return;
+  order.classList.remove("is-fullscreen");
+  document.body.classList.remove("order-screen-open");
 }
 
 function bindEvents(): void {
@@ -517,7 +569,7 @@ function bindEvents(): void {
     if (target.dataset.action === "dec") setQuantity(id, qty - 1);
   });
 
-  byId("cuisine-tabs").addEventListener("click", (event) => {
+  document.getElementById("cuisine-tabs")?.addEventListener("click", (event) => {
     const tab = (event.target as HTMLElement).closest<HTMLElement>("[data-cuisine]");
     if (!tab) return;
     state.cuisine = tab.dataset.cuisine as CuisineFilter;
@@ -525,15 +577,8 @@ function bindEvents(): void {
     renderMenu();
   });
 
-  byId("category-filter").addEventListener("click", (event) => {
-    const chip = (event.target as HTMLElement).closest<HTMLElement>("[data-category]");
-    if (!chip) return;
-    state.category = chip.dataset.category as CategoryFilter;
-    renderCategoryFilter();
-    renderMenu();
-  });
-
-  byId<HTMLInputElement>("search").addEventListener("input", (event) => {
+  // The search box is optional (it's currently commented out in index.html).
+  document.getElementById("search")?.addEventListener("input", (event) => {
     state.search = (event.target as HTMLInputElement).value.trim().toLowerCase();
     renderMenu();
   });
@@ -549,21 +594,28 @@ function bindEvents(): void {
   byId("dietary-notes").addEventListener("click", (event) => {
     if (!(event.target as HTMLElement).closest("#clear-dietary")) return;
     state.dietary = emptyDietary();
-    saveDietary();
+    saveDietary(false); // only clears this order's notes; the account keeps its saved requirements
     renderCart();
   });
 
   byId<HTMLFormElement>("address-form").addEventListener("submit", placeOrder);
-  byId("cart-button").addEventListener("click", scrollToOrder);
-  byId("mobile-cart-bar").addEventListener("click", scrollToOrder);
+  byId("mobile-cart-bar").addEventListener("click", openOrderScreen);
+
+  // Full-screen order view: close with its button or Escape, and go back to the page once an order is placed.
+  byId("close-order-screen").addEventListener("click", closeOrderScreen);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !document.querySelector("dialog[open]")) closeOrderScreen();
+  });
+  byId<HTMLDialogElement>("confirmation").addEventListener("close", closeOrderScreen);
 }
 
 // ───────────── Start ─────────────
 
 renderCuisineTabs();
-renderCategoryFilter();
 renderMenu();
 renderCart();
 populateDeliveryTimes();
 restoreSavedAddress();
+renderLanguageMenu();
 bindEvents();
+bindLanguageMenu();

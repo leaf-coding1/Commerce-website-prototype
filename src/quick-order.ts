@@ -1,50 +1,52 @@
 // Quick order: a short step-by-step questionnaire that builds an order for the customer.
 // Uses the menu data from data.ts and the basket functions from app.ts (both loaded first).
-
-type MealType = "microwave" | "dish";
+// The two buttons on the page ("Care for yourself" / "Care for other") decide who it's for.
 
 interface QuickOrderAnswers {
-  mealType: MealType | null;
   cuisine: Cuisine | null;
-  /** Item id of the chosen tea, "none" for no tea, or null if not answered yet. */
-  tea: string | null;
+  /** Id of the chosen meal; null if not chosen yet. */
+  meal: string | null;
+  /** Id of the chosen drink, NO_DRINK if they don't want one, or null if not chosen yet. */
+  drink: string | null;
   extras: Set<string>;
+  /** Set by which button opened the quick order. */
+  forSomeoneElse: boolean;
+  /** Card / ribbons ids (only used when ordering for someone else). */
+  giftExtras: Set<string>;
   diets: Set<Diet>;
   allergies: Set<Allergen>;
   other: string;
 }
 
-const QUICK_STEPS = ["meal", "cuisine", "tea", "extras", "dietary", "review"] as const;
+const NO_DRINK = "none";
+
+const QUICK_STEPS = ["cuisine", "dietary", "meal", "drink", "extras", "review"] as const;
 type QuickStep = (typeof QUICK_STEPS)[number];
 
-const MEAL_TYPES: { id: MealType; label: string; detail: string; icon: string }[] = [
-  {
-    id: "microwave", icon: "⏱️", label: "Microwave meal",
-    detail: "Delivered chilled, ready to heat in 3–5 minutes whenever you like.",
-  },
-  {
-    id: "dish", icon: "🍳", label: "Freshly cooked",
-    detail: "Cooked to order by our kitchen from fresh ingredients and delivered hot.",
-  },
-];
+/** The steps this customer sees. Logged-in customers gave their dietary needs when they made
+ *  their account (see account.ts), so they skip that step, unless they're ordering for someone else. */
+function quickSteps(): readonly QuickStep[] {
+  const usesAccountDietary = currentAccount() !== null && !quick.answers.forSomeoneElse;
+  return usesAccountDietary ? QUICK_STEPS.filter((s) => s !== "dietary") : QUICK_STEPS;
+}
 
 const quick = {
   step: 0,
-  answers: newAnswers(),
-  /** Which of the suitable meals is suggested; "Show me another" moves it on. */
-  mealOffset: 0,
+  // Blank until the quick order is opened: account.js (currentAccount) hasn't loaded yet at this point.
+  answers: newAnswers(false, emptyDietary()),
 };
 
-function newAnswers(): QuickOrderAnswers {
+function newAnswers(forSomeoneElse: boolean, dietary: DietaryInfo): QuickOrderAnswers {
   return {
-    mealType: null,
     cuisine: null,
-    tea: null,
+    meal: null,
+    drink: null,
     extras: new Set(),
-    // Start from what the customer told us last time.
-    diets: new Set(state.dietary.diets),
-    allergies: new Set(state.dietary.allergies),
-    other: state.dietary.other,
+    forSomeoneElse,
+    giftExtras: new Set(),
+    diets: new Set(dietary.diets),
+    allergies: new Set(dietary.allergies),
+    other: dietary.other,
   };
 }
 
@@ -71,17 +73,24 @@ function conflicts(item: MenuItem, diets: Set<Diet>, allergies: Set<Allergen>): 
   return reasons;
 }
 
-function suitableMeals(a: QuickOrderAnswers): MenuItem[] {
+/** Items of one category from the chosen cuisine that suit the customer's dietary needs. */
+function suitableItems(a: QuickOrderAnswers, category: Category): MenuItem[] {
   return MENU.filter(
     (item) =>
       item.cuisine === a.cuisine &&
-      item.category === a.mealType &&
+      item.category === category &&
       conflicts(item, a.diets, a.allergies).length === 0,
   );
 }
 
-function teasFor(cuisine: Cuisine): MenuItem[] {
-  return MENU.filter((item) => item.cuisine === cuisine && item.isTea);
+/** The chosen meal / drink, or null if nothing is chosen or the choice no longer suits
+ *  (e.g. they went back and changed cuisine or dietary needs). */
+function chosenMeal(a: QuickOrderAnswers): MenuItem | null {
+  return suitableItems(a, "quick meal").find((m) => m.id === a.meal) ?? null;
+}
+
+function chosenDrink(a: QuickOrderAnswers): MenuItem | null {
+  return suitableItems(a, "drink").find((d) => d.id === a.drink) ?? null;
 }
 
 function cuisineInfo(id: Cuisine | null): CuisineInfo | undefined {
@@ -106,6 +115,16 @@ function optionCard(
     </label>`;
 }
 
+/** A meal or drink as a radio card, with its native name, description and heating time. */
+function menuOption(name: string, item: MenuItem, checked: boolean): string {
+  const detail = [
+    item.nativeName ? `<span class="qo-native">${item.nativeName}</span>` : "",
+    item.description,
+    item.microwaveMinutes ? `⏱️ Microwave ${item.microwaveMinutes} min` : "",
+  ].filter(Boolean).join("<br>");
+  return optionCard("radio", name, item.id, checked, item.emoji, item.name, detail, item.price);
+}
+
 function checkChip(name: string, value: string, checked: boolean, label: string, hint = ""): string {
   return `
     <label class="qo-check">
@@ -116,46 +135,22 @@ function checkChip(name: string, value: string, checked: boolean, label: string,
 
 function stepContent(step: QuickStep): { title: string; intro?: string; body: string } {
   const a = quick.answers;
+  const who = a.forSomeoneElse ? "them" : "you";
 
   switch (step) {
-    case "meal":
-      return {
-        title: "What kind of meal would you like?",
-        body: `<div class="qo-options" role="radiogroup">${MEAL_TYPES.map((m) =>
-          optionCard("radio", "mealType", m.id, a.mealType === m.id, m.icon, m.label, m.detail)).join("")}</div>`,
-      };
-
     case "cuisine":
       return {
-        title: "Which cuisine are you in the mood for?",
+        title: a.forSomeoneElse ? "Which cuisine would they like?" : "Which cuisine are you in the mood for?",
         body: `<div class="qo-options" role="radiogroup">${CUISINES.map((c) =>
           optionCard("radio", "cuisine", c.id, a.cuisine === c.id, c.flag, c.name, c.blurb)).join("")}</div>`,
       };
 
-    case "tea": {
-      const cuisine = cuisineInfo(a.cuisine);
-      const teas = a.cuisine ? teasFor(a.cuisine) : [];
-      return {
-        title: `Would you like a ${cuisine?.name ?? ""} tea with that?`,
-        body: `<div class="qo-options" role="radiogroup">
-          ${teas.map((t) => optionCard("radio", "tea", t.id, a.tea === t.id, t.emoji, t.name, t.description, t.price)).join("")}
-          ${optionCard("radio", "tea", "none", a.tea === "none", "🚫", "No tea, thanks")}
-        </div>`,
-      };
-    }
-
-    case "extras":
-      return {
-        title: "Any extras?",
-        intro: "Optional: tick as many as you like.",
-        body: `<div class="qo-options">${EXTRAS.map((x) =>
-          optionCard("checkbox", "extras", x.id, a.extras.has(x.id), x.emoji, x.name, x.description, x.price)).join("")}</div>`,
-      };
-
     case "dietary":
       return {
-        title: "Any dietary needs or allergies?",
-        intro: "We'll only suggest meals that suit you, and pass this on to the kitchen.",
+        title: a.forSomeoneElse
+          ? "Does the person you're ordering for have any dietary needs or allergies?"
+          : "Any dietary needs or allergies?",
+        intro: `We'll only show meals and drinks that suit ${who}, and pass this on to the kitchen.`,
         body: `
           <fieldset class="qo-group">
             <legend>Dietary needs</legend>
@@ -176,66 +171,103 @@ function stepContent(step: QuickStep): { title: string; intro?: string; body: st
             so if your allergy is severe please call us before ordering.</p>`,
       };
 
+    case "meal": {
+      const cuisine = cuisineInfo(a.cuisine)!;
+      const meals = suitableItems(a, "quick meal");
+      return {
+        title: `Choose a ${cuisine.name} meal`,
+        intro: `${cuisine.flag} Only meals that suit ${a.forSomeoneElse ? "their" : "your"} dietary needs are shown.`,
+        body: meals.length
+          ? `<div class="qo-options" role="radiogroup">${meals.map((m) =>
+              menuOption("meal", m, a.meal === m.id)).join("")}</div>`
+          : `<p class="qo-warning">No meals on the ${cuisine.name} menu suit these dietary needs.
+              <button type="button" class="link-button" data-qo-goto="cuisine">Try another cuisine</button>,
+              or carry on to choose just a drink and extras.</p>`,
+      };
+    }
+
+    case "drink": {
+      const cuisine = cuisineInfo(a.cuisine)!;
+      const drinks = suitableItems(a, "drink");
+      return {
+        title: `Choose a ${cuisine.name} drink`,
+        intro: drinks.length ? "Traditional teas and drinks to go with the meal." : undefined,
+        body: drinks.length
+          ? `<div class="qo-options" role="radiogroup">
+              ${drinks.map((d) => menuOption("drink", d, a.drink === d.id)).join("")}
+              ${optionCard("radio", "drink", NO_DRINK, a.drink === NO_DRINK, "🚫", "No drink, thanks")}
+            </div>`
+          : `<p class="qo-none">None of the ${cuisine.name} drinks suit these dietary needs, so we'll leave the drink out.</p>`,
+      };
+    }
+
+    case "extras":
+      return {
+        title: "Any extras?",
+        intro: "Optional: tick as many as you like.",
+        body: `
+          <div class="qo-options">${EXTRAS.map((x) =>
+            optionCard("checkbox", "extras", x.id, a.extras.has(x.id), x.emoji, x.name, x.description, x.price)).join("")}</div>
+          ${a.forSomeoneElse
+            ? `<fieldset class="qo-group">
+                 <legend>Anything else for their package? <span class="optional">(optional)</span></legend>
+                 <div class="qo-options">${GIFT_EXTRAS.map((x) =>
+                   optionCard("checkbox", "giftExtras", x.id, a.giftExtras.has(x.id), x.emoji, x.name, x.description, x.price)).join("")}</div>
+               </fieldset>`
+            : ""}`,
+      };
+
     case "review":
       return reviewContent();
   }
 }
 
+/** Everything the quick order will add to the basket: meal, drink and extras. */
+function reviewItems(a: QuickOrderAnswers): Product[] {
+  const extras = [...EXTRAS.filter((x) => a.extras.has(x.id)), ...chosenGiftExtras(a)];
+  return [chosenMeal(a), chosenDrink(a), ...extras].filter((x): x is Product => Boolean(x));
+}
+
 function reviewContent(): { title: string; intro?: string; body: string } {
   const a = quick.answers;
   const cuisine = cuisineInfo(a.cuisine)!;
-  const mealType = MEAL_TYPES.find((m) => m.id === a.mealType)!;
-  const meals = suitableMeals(a);
-  const meal = meals.length ? meals[quick.mealOffset % meals.length] : null;
-  const tea = MENU.find((item) => item.id === a.tea);
-  const extras = EXTRAS.filter((x) => a.extras.has(x.id));
+  const meal = chosenMeal(a);
+  const drink = chosenDrink(a);
+  const extras = [...EXTRAS.filter((x) => a.extras.has(x.id)), ...chosenGiftExtras(a)];
 
   const line = (item: Product, accent: string) => `
     <li class="${accent}">
       <span>${item.emoji} ${item.name}<small>${item.description}</small></span>
       <span class="qo-price">${formatPrice(item.price)}</span>
     </li>`;
+  const change = (step: QuickStep) =>
+    `<button type="button" class="link-button" data-qo-goto="${step}">Change</button>`;
 
-  let mealHtml: string;
-  if (meal) {
-    mealHtml = `
-      <ul class="qo-review">${line(meal, `cuisine-${meal.cuisine}`)}</ul>
-      ${meals.length > 1
-        ? `<button type="button" class="link-button" id="qo-another">🔀 Show me another (${meals.length} options suit you)</button>`
-        : ""}`;
-  } else {
-    mealHtml = `
-      <p class="qo-warning">No ${mealType.label.toLowerCase()}s on the ${cuisine.name} menu suit your dietary needs.
-        <button type="button" class="link-button" data-qo-goto="0">Change meal type</button> or
-        <button type="button" class="link-button" data-qo-goto="1">try another cuisine</button>.</p>`;
-  }
-
-  const teaProblems = tea ? conflicts(tea, a.diets, a.allergies).filter((r) => r !== "spicy") : [];
-  const teaWarning = teaProblems.length
-    ? `<p class="qo-warning">⚠️ ${tea!.name} is ${teaProblems.join(", ")}.
-         <button type="button" class="link-button" data-qo-goto="2">Change tea</button></p>`
-    : "";
-
-  const items: Product[] = [meal, tea, ...extras].filter((x): x is Product => Boolean(x));
-  const total = items.reduce((sum, item) => sum + item.price, 0);
+  const total = reviewItems(a).reduce((sum, item) => sum + item.price, 0);
   const notes = dietaryLines(currentDietary());
 
   return {
-    title: "Here's your quick order",
-    intro: `${cuisine.flag} ${cuisine.name} · ${mealType.label}`,
+    title: a.forSomeoneElse ? "Here's their care package" : "Here's your quick order",
+    intro: `${cuisine.flag} ${cuisine.name}${a.forSomeoneElse ? " · 🎁 For someone else" : ""}`,
     body: `
-      <h3 class="qo-subhead">Your meal</h3>
-      ${mealHtml}
-      <h3 class="qo-subhead">Tea &amp; extras</h3>
-      ${tea || extras.length
-        ? `<ul class="qo-review">${tea ? line(tea, `cuisine-${tea.cuisine}`) : ""}${extras.map((x) => line(x, "extra-item")).join("")}</ul>`
+      <h3 class="qo-subhead">Meal ${change("meal")}</h3>
+      ${meal ? `<ul class="qo-review">${line(meal, `cuisine-${meal.cuisine}`)}</ul>` : `<p class="qo-none">No meal</p>`}
+      <h3 class="qo-subhead">Drink ${change("drink")}</h3>
+      ${drink ? `<ul class="qo-review">${line(drink, `cuisine-${drink.cuisine}`)}</ul>` : `<p class="qo-none">No drink</p>`}
+      <h3 class="qo-subhead">Extras ${change("extras")}</h3>
+      ${extras.length
+        ? `<ul class="qo-review">${extras.map((x) => line(x, "extra-item")).join("")}</ul>`
         : `<p class="qo-none">None</p>`}
-      ${teaWarning}
       ${notes.length
-        ? `<div class="notes-box"><h3>Dietary &amp; allergy notes</h3><ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`
+        ? `<div class="notes-box"><h3>Dietary &amp; allergy notes${currentAccount() && !a.forSomeoneElse ? " (from your account)" : ""}</h3><ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`
         : ""}
       <div class="qo-total"><span>Adds to your basket</span><span>${formatPrice(total)}</span></div>`,
   };
+}
+
+/** The card / ribbons they ticked, or none if the order is for themselves. */
+function chosenGiftExtras(a: QuickOrderAnswers): ExtraItem[] {
+  return a.forSomeoneElse ? GIFT_EXTRAS.filter((x) => a.giftExtras.has(x.id)) : [];
 }
 
 function currentDietary(): DietaryInfo {
@@ -250,27 +282,35 @@ function quickDialog(): HTMLDialogElement {
 }
 
 function renderQuickOrder(): void {
-  const step = QUICK_STEPS[quick.step];
+  const steps = quickSteps();
+  const step = steps[quick.step];
   const { title, intro, body } = stepContent(step);
-  const isReview = step === "review";
 
   let submitLabel = "Next";
   let submitDisabled = false;
-  if (isReview) {
-    const hasMeal = suitableMeals(quick.answers).length > 0;
-    const hasOthers = (quick.answers.tea && quick.answers.tea !== "none") || quick.answers.extras.size > 0;
-    submitLabel = hasMeal ? "Add to my order" : "Add tea & extras only";
-    submitDisabled = !hasMeal && !hasOthers;
+  let submitClass = "primary-button";
+  if (step === "review") {
+    // The last button works like the old basket button: 🛒, the total and how many items it adds.
+    const items = reviewItems(quick.answers);
+    const total = items.reduce((sum, item) => sum + item.price, 0);
+    submitClass = "primary-button qo-cart-button";
+    submitLabel = `
+      <span aria-hidden="true">🛒</span>
+      <span>Add to my order</span>
+      <span class="qo-cart-total">${formatPrice(total)}</span>
+      <span class="badge" aria-label="${items.length} item${items.length === 1 ? "" : "s"}">${items.length}</span>`;
+    submitDisabled = items.length === 0;
   }
 
   quickDialog().innerHTML = `
     <form class="qo-form" id="qo-form" novalidate>
       <div class="qo-header">
-        <p class="qo-step-label">Quick order · Step ${quick.step + 1} of ${QUICK_STEPS.length}</p>
+        <p class="qo-step-label">${quick.answers.forSomeoneElse ? "Care for other" : "Care for yourself"}
+          · Step ${quick.step + 1} of ${steps.length}</p>
         <button type="button" class="qo-close" id="qo-close" aria-label="Close quick order">×</button>
       </div>
       <div class="qo-progress" aria-hidden="true">
-        <span style="width: ${((quick.step + 1) / QUICK_STEPS.length) * 100}%"></span>
+        <span style="width: ${((quick.step + 1) / steps.length) * 100}%"></span>
       </div>
       <h2 id="quick-order-title" tabindex="-1">${title}</h2>
       ${intro ? `<p class="qo-intro">${intro}</p>` : ""}
@@ -278,7 +318,7 @@ function renderQuickOrder(): void {
       <p class="error" id="qo-error" role="alert"></p>
       <div class="qo-nav">
         ${quick.step > 0 ? `<button type="button" class="secondary-button" id="qo-back">Back</button>` : ""}
-        <button type="submit" class="primary-button" ${submitDisabled ? "disabled" : ""}>${submitLabel}</button>
+        <button type="submit" class="${submitClass}" ${submitDisabled ? "disabled" : ""}>${submitLabel}</button>
       </div>
     </form>`;
 
@@ -291,29 +331,33 @@ function saveStep(form: HTMLFormElement): string | null {
   const data = new FormData(form);
   const value = (name: string) => data.get(name) as string | null;
 
-  switch (QUICK_STEPS[quick.step]) {
-    case "meal":
-      if (!value("mealType")) return "Please choose microwave or freshly cooked.";
-      a.mealType = value("mealType") as MealType;
-      break;
+  switch (quickSteps()[quick.step]) {
     case "cuisine": {
       const cuisine = value("cuisine") as Cuisine | null;
       if (!cuisine) return "Please choose a cuisine.";
-      if (cuisine !== a.cuisine) a.tea = null; // teas differ per cuisine
       a.cuisine = cuisine;
       break;
     }
-    case "tea":
-      if (!value("tea")) return "Please choose a tea, or “No tea, thanks”.";
-      a.tea = value("tea");
-      break;
-    case "extras":
-      a.extras = new Set(data.getAll("extras") as string[]);
-      break;
     case "dietary":
       a.diets = new Set(data.getAll("diets") as Diet[]);
       a.allergies = new Set(data.getAll("allergies") as Allergen[]);
       a.other = (value("other") ?? "").trim();
+      break;
+    case "meal": {
+      const meal = value("meal");
+      if (!meal && suitableItems(a, "quick meal").length) return "Please choose a meal.";
+      a.meal = meal;
+      break;
+    }
+    case "drink": {
+      const drink = value("drink");
+      if (!drink && suitableItems(a, "drink").length) return "Please choose a drink, or “No drink, thanks”.";
+      a.drink = drink;
+      break;
+    }
+    case "extras":
+      a.extras = new Set(data.getAll("extras") as string[]);
+      a.giftExtras = new Set(data.getAll("giftExtras") as string[]);
       break;
     case "review":
       break;
@@ -322,16 +366,15 @@ function saveStep(form: HTMLFormElement): string | null {
 }
 
 function goToStep(step: number): void {
-  if (QUICK_STEPS[step] === "review") {
-    const count = Math.max(suitableMeals(quick.answers).length, 1);
-    quick.mealOffset = Math.floor(Math.random() * count);
-  }
-  quick.step = step;
+  quick.step = Math.max(0, step);
   renderQuickOrder();
 }
 
-function openQuickOrder(): void {
-  quick.answers = newAnswers();
+function openQuickOrder(forSomeoneElse: boolean): void {
+  // For themselves: start from the account's saved needs, or (logged out) what they told us last time.
+  // For someone else: start blank, since the customer's own needs don't apply.
+  const dietary = forSomeoneElse ? emptyDietary() : currentAccount()?.dietary ?? state.dietary;
+  quick.answers = newAnswers(forSomeoneElse, dietary);
   quick.step = 0;
   renderQuickOrder();
   quickDialog().showModal();
@@ -339,18 +382,20 @@ function openQuickOrder(): void {
 
 function finishQuickOrder(): void {
   const a = quick.answers;
-  const meals = suitableMeals(a);
-  const meal = meals.length ? meals[quick.mealOffset % meals.length] : null;
-  const ids = [meal?.id, a.tea !== "none" ? a.tea : null, ...a.extras].filter((id): id is string => Boolean(id));
+  const ids = [chosenMeal(a)?.id, chosenDrink(a)?.id, ...a.extras,
+    ...chosenGiftExtras(a).map((x) => x.id)]
+    .filter((id): id is string => Boolean(id));
 
-  addItemsToOrder(ids, currentDietary());
+  // Someone else's needs go to the kitchen with this order but aren't saved to the customer's account.
+  addItemsToOrder(ids, currentDietary(), !a.forSomeoneElse);
   quickDialog().close();
-  scrollToOrder();
+  openOrderScreen();
 }
 
 function bindQuickOrder(): void {
   const dialog = quickDialog();
-  byId("quick-order-button").addEventListener("click", openQuickOrder);
+  byId("quick-order-button").addEventListener("click", () => openQuickOrder(false));
+  byId("quick-order-other-button").addEventListener("click", () => openQuickOrder(true));
 
   dialog.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -360,7 +405,7 @@ function bindQuickOrder(): void {
       byId("qo-error").textContent = error;
       return;
     }
-    if (QUICK_STEPS[quick.step] === "review") finishQuickOrder();
+    if (quickSteps()[quick.step] === "review") finishQuickOrder();
     else goToStep(quick.step + 1);
   });
 
@@ -373,11 +418,9 @@ function bindQuickOrder(): void {
     } else if (target.closest("#qo-back")) {
       saveStep(form); // keep whatever they picked on this step
       goToStep(quick.step - 1);
-    } else if (target.closest("#qo-another")) {
-      quick.mealOffset += 1;
-      renderQuickOrder();
     } else if (target.closest("[data-qo-goto]")) {
-      goToStep(Number(target.closest<HTMLElement>("[data-qo-goto]")!.dataset.qoGoto));
+      const step = target.closest<HTMLElement>("[data-qo-goto]")!.dataset.qoGoto as QuickStep;
+      goToStep(quickSteps().indexOf(step));
     } else if (target === dialog) {
       dialog.close(); // clicked the backdrop
     }

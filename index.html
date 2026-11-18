@@ -13,11 +13,20 @@
         <span class="brand-mark" aria-hidden="true">🥢</span>
         Five Kitchens
       </a>
-      <button class="cart-button" id="cart-button" type="button" aria-label="View your order">
-        <span aria-hidden="true">🛒</span>
-        <span class="cart-button-total" id="cart-button-total">£0.00</span>
-        <span class="badge" id="cart-count">0</span>
-      </button>
+      <div class="header-actions">
+        <div class="language-picker">
+          <button class="language-button" id="language-button" type="button"
+            aria-haspopup="true" aria-expanded="false" aria-controls="language-menu">
+            <span aria-hidden="true">🌐</span>
+            <span class="language-button-label" id="language-button-label">English</span>
+          </button>
+          <ul class="language-menu" id="language-menu" aria-label="Change language" hidden></ul>
+        </div>
+        <button class="account-button" id="account-button" type="button" aria-label="Log in">
+          <span aria-hidden="true">👤</span>
+          <span class="account-button-label" id="account-button-label">Log in</span>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -25,40 +34,29 @@
     <div class="wrap">
       <h1>Food from five cultures, delivered to your door.</h1>
       <p>
-        Freshly cooked dishes, microwave-ready meals and traditional teas and drinks
-        from Chinese, Indian, Nepalese, Vietnamese and Bangladeshi kitchens.
+        Your all in one care package from home
       </p>
     </div>
   </section>
 
   <main class="wrap layout">
     <section class="menu" aria-label="Menu">
-      <nav class="cuisine-tabs" id="cuisine-tabs" aria-label="Choose a cuisine"></nav>
 
-      <div class="filters">
-        <div class="category-filter" id="category-filter" role="group" aria-label="Filter by type"></div>
-        <label class="search">
-          <span class="visually-hidden">Search the menu</span>
-          <input type="search" id="search" placeholder="Search dishes, drinks, ingredients…" autocomplete="off">
-        </label>
+      <div class="order-card quick-order-card">
+        <h2>Begin order journey here</h2>
+        <p>Answer a few quick questions and we'll put together a meal, tea and extras for you.</p>
+        <div class="quick-order-buttons">
+          <button class="primary-button" type="button" id="quick-order-button">🙋 Care for yourself</button>
+          <button class="primary-button care-another" type="button" id="quick-order-other-button">🎁 Care for other</button>
+        </div>
       </div>
-
-      <div class="legend" aria-label="Key">
-        <span class="tag tag-V">V</span> Vegetarian
-        <span class="tag tag-VG">VG</span> Vegan
-        <span class="tag tag-Spicy">Spicy</span>
-        <span class="tag tag-Nuts">Nuts</span>
-        <span class="tag tag-Fish">Fish</span> Contains fish/seafood
-      </div>
-
-      <div id="menu-list"></div>
     </section>
 
     <aside class="order" id="order" aria-label="Your order">
-      <div class="order-card quick-order-card">
-        <h2>Not sure what to get?</h2>
-        <p>Answer a few quick questions and we'll put together a meal, tea and extras for you.</p>
-        <button class="primary-button" type="button" id="quick-order-button">⚡ Quick order</button>
+      <!-- Only shown when the order covers the whole screen (after the quick order). -->
+      <div class="order-screen-bar">
+        <h2 id="order-screen-title" tabindex="-1">Check your order</h2>
+        <button type="button" class="secondary-button" id="close-order-screen">← Back</button>
       </div>
 
       <div class="order-card">
@@ -130,6 +128,7 @@
 
   <dialog class="confirmation" id="confirmation" aria-labelledby="confirmation-title"></dialog>
   <dialog class="quick-order" id="quick-order" aria-labelledby="quick-order-title"></dialog>
+  <dialog class="quick-order account-dialog" id="account" aria-labelledby="account-title"></dialog>
 
   <footer class="site-footer">
     <div class="wrap">Five Kitchens — a local demo site. No real orders or payments are taken.</div>
@@ -139,5 +138,6 @@
   <script src="dist/data.js"></script>
   <script src="dist/app.js"></script>
   <script src="dist/quick-order.js"></script>
+  <script src="dist/account.js"></script>
 </body>
 </html>
